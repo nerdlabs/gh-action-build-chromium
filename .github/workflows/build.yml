@@ -1,0 +1,35 @@
+name: Build Chromium
+
+on: push
+
+jobs:
+  build-chromium:
+    name: Build Chromium
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone depot_tools repository
+        run: git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+      - run: echo "${PWD}/depot_tools" >> $GITHUB_PATH
+      - name: Fetch chromium repository
+        run: mkdir chromium && cd $_
+      - run: fetch --no-history --nohooks chromium
+      - name: Install build dependencies
+        run: cd src
+      - run: ./build/install-build-deps.sh
+      - run: ./build/linux/sysroot_scripts/install-sysroot.py --arch=arm64
+      - run: gclient runhooks
+      - name: Patch out assertions
+        run: "sed -i.bak 's/assert(current_toolchain == default_toolchain)/# assert(current_toolchain == default_toolchain)/' ./build/config/linux/atk/BUILD.gn"
+      - run: "sed -i.bak 's/assert(current_toolchain == default_toolchain)/# assert(current_toolchain == default_toolchain)/' ./build/config/linux/atspi2/BUILD.gn"
+      - name: Create build directory and configure cross-compilation
+        run: gn gen out/Default --args='target_os="linux" target_cpu="arm64" is_debug=false symbol_level=0 enable_nacl=false blink_symbol_level=0'
+      - name: Compile chromium
+        run: autoninja -C out/Default chrome
+      - name: Create rpm installer
+        run: autoninja -C out/Default chrome/installer/linux:stable_rpm
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: aarch64-rpm
+          path: out/Default/chromium-browser-stable-*.rpm
